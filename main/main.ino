@@ -51,6 +51,13 @@ static const char *NTP2 = "pool.ntp.org";
 // スピーカー音量。バッテリー駆動時は 75% 未満推奨 (=190 以下)
 static const uint8_t SPK_VOLUME = 150;
 
+// 再起動時に鳴動状態を復元する猶予 (秒)。
+// 電源断の直前に鳴っていたアラームは、鳴り始めからこの秒数以内なら復帰後も鳴り続ける
+// (瞬断で目覚ましが黙ってしまうのを防ぐため)。これを超えたものは「もう時間が過ぎた
+// アラーム」とみなして復元せず、次回の予定に回す。
+// 0 にすると鳴動状態を一切復元しない (Rust 版は無条件に復元する)。
+static const time_t RINGING_RESUME_GRACE_SEC = 300; // 5 分
+
 // 1 = ESP32 内蔵のルート証明書バンドルで検証 (推奨)
 // 0 = 証明書検証なし (動作確認用。本番では使わない)
 #define USE_CERT_BUNDLE 1
@@ -71,11 +78,22 @@ struct Alarm {
   bool hasStopMethod = false;
   String stopMethodId; // hasStopMethod == false なら null 扱い
 
-  time_t nextWakeup = 0; // 0 = スケジュールなし
+  time_t nextWakeup = 0;   // 0 = スケジュールなし
   bool ringing = false;
+  time_t ringingSince = 0; // 鳴り始めた予定時刻 (ringing == false なら 0)
 };
 
 static std::vector<Alarm> g_alarms;
+
+// NVS から読んだ鳴動状態の復元待ち。時刻が確定してから restoreRinging() で判定する
+struct RingRestore {
+  String id;
+  time_t since;
+};
+static std::vector<RingRestore> g_ringRestore;
+
+// NTP 同期後のスケジュール組み直しが済んだか。済むまでアラームは発火させない
+static bool g_scheduleReady = false;
 
 // pause によるミュート期間 (Rust の MuteStatus 相当)
 static bool g_muteActive = false;
@@ -207,10 +225,14 @@ static void persistState() {
   JsonArray arr = doc["alarms"].to<JsonArray>();
   for (const auto &a : g_alarms)
     alarmToJson(a, arr.add<JsonObject>());
-  JsonArray ring = doc["ringing_ids"].to<JsonArray>();
+  // 鳴動中のアラームは「いつ鳴り始めたか」も残す (再起動時の復元判定に使う)
+  JsonArray ring = doc["ringing"].to<JsonArray>();
   for (const auto &a : g_alarms) {
-    if (a.ringing)
-      ring.add(a.id);
+    if (!a.ringing)
+      continue;
+    JsonObject o = ring.add<JsonObject>();
+    o["id"] = a.id;
+    o["since"] = (int64_t)a.ringingSince;
   }
 
   String out;
@@ -249,12 +271,41 @@ static void loadState() {
     g_alarms.push_back(a);
   }
 
-  // 終了時に鳴動中だったアラームは起動直後に鳴動を再開する
-  for (JsonVariantConst v : doc["ringing_ids"].as<JsonArrayConst>()) {
-    Alarm *a = findAlarm(String(v.as<const char *>()));
-    if (a)
-      a->ringing = true;
+  // 終了時に鳴動中だったアラーム。ここでは ringing を立てない:
+  // NTP 同期前は「もう時間が過ぎたアラームか」を判定できないため、
+  // 時刻が確定してから restoreRinging() で判断する
+  for (JsonObjectConst o : doc["ringing"].as<JsonArrayConst>()) {
+    const char *id = o["id"];
+    if (!id)
+      continue;
+    g_ringRestore.push_back({String(id), (time_t)(o["since"] | (int64_t)0)});
   }
+}
+
+/*
+ * 再起動前に鳴っていたアラームの鳴動を復元する。時計が確定してから一度だけ呼ぶこと。
+ * Rust 版 (with_ringer_and_store) は ringing_ids を無条件に start_ringing するが、
+ * こちらは鳴り始めから RINGING_RESUME_GRACE_SEC 以内のものだけを復元する。
+ * 電源が落ちている間に時刻が過ぎてしまったアラームは起動直後に鳴り出さず、
+ * 次回の予定 (computeNextWakeup) に回る。
+ */
+static void restoreRinging() {
+  time_t now = time(nullptr);
+  for (const auto &r : g_ringRestore) {
+    Alarm *a = findAlarm(r.id);
+    if (!a)
+      continue;
+    if (r.since <= 0 || now - r.since > RINGING_RESUME_GRACE_SEC) {
+      Serial.printf("[boot] %s は時間が過ぎているため鳴動を復元しません\n",
+                    a->id.c_str());
+      continue;
+    }
+    a->ringing = true;
+    a->ringingSince = r.since;
+    Serial.printf("[boot] %s の鳴動を再開します\n", a->id.c_str());
+  }
+  g_ringRestore.clear();
+  persistState();
 }
 
 // ---------- MQTT ----------
@@ -299,6 +350,7 @@ static void stopAllRinging() {
   for (auto &a : g_alarms) {
     if (a.ringing) {
       a.ringing = false;
+      a.ringingSince = 0;
       stopped.push_back(a.id);
     }
   }
@@ -454,7 +506,9 @@ static void ensureMqtt() {
 
 // ---------- 鳴動 & 画面 ----------
 static void checkSchedule() {
-  if (!timeIsSynced())
+  // NTP 同期前に組んだ nextWakeup は 1970 年基準ででたらめなので、
+  // 同期後の組み直しが済むまでは絶対に発火させない
+  if (!g_scheduleReady)
     return;
   time_t now = time(nullptr);
   bool changed = false;
@@ -464,6 +518,7 @@ static void checkSchedule() {
       continue;
     if (!a.ringing) {
       a.ringing = true;
+      a.ringingSince = a.nextWakeup;
       Serial.printf("[ring] %s %02u:%02u\n", a.id.c_str(), a.hour, a.minute);
     }
     // 発火後は +2 秒を起点に次回を計算する (同日再発火の防止)
@@ -591,18 +646,19 @@ void setup() {
   g_mqtt.setBufferSize(4096); // list の応答が 256 バイトを超えるため必須
   g_mqtt.setKeepAlive(15);
 
-  // 起動時点の時刻でスケジュールを組む (NTP 同期後に組み直す)
-  rescheduleAll(time(nullptr));
+  // ここではスケジュールを組まない。起動直後の時刻は 1970 年で意味がないため、
+  // 時計が確定してから loop() で一度だけ組む
 }
 
 void loop() {
   M5.update();
 
-  // NTP 同期が完了したタイミングで一度だけ組み直す
-  static bool scheduled = false;
-  if (!scheduled && timeIsSynced()) {
+  // 時計が確定したタイミングで一度だけスケジュールを組み、
+  // 再起動前の鳴動状態もここで判定する (どちらも正しい現在時刻が要る)
+  if (!g_scheduleReady && timeIsSynced()) {
     rescheduleAll(time(nullptr));
-    scheduled = true;
+    restoreRinging();
+    g_scheduleReady = true;
   }
 
   // 本体ボタン (MQTT の stop / pause と同等の操作)
