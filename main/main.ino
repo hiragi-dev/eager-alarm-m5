@@ -81,6 +81,9 @@ struct Alarm {
   time_t nextWakeup = 0; // 0 = スケジュールなし
   bool ringing = false;
   time_t ringingSince = 0; // 鳴り始めた予定時刻 (ringing == false なら 0)
+ 
+  bool isNfcEnabled; // NFCを使った二要素認証のアラームかどうか
+  bool isNfcVerified; // NFC認証が成功したかどうか
 };
 
 static std::vector<Alarm> g_alarms;
@@ -219,6 +222,8 @@ static void alarmToJson(const Alarm &a, JsonObject o) {
   } else {
     o["stop_method_id"] = nullptr;
   }
+  o["is_nfc_enabled"] = a.isNfcEnabled;
+  o["is_nfc_verified"] = a.isNfcVerified;
 }
 
 static void persistState() {
@@ -352,6 +357,7 @@ static void stopAllRinging() {
   for (auto &a : g_alarms) {
     if (a.ringing) {
       a.ringing = false;
+      a.isNfcVerified = false; // 停止時に NFC 認証をリセットする
       a.ringingSince = 0;
       stopped.push_back(a.id);
     }
@@ -393,6 +399,10 @@ static bool parseAlarmFields(JsonDocument &doc, Alarm &a) {
     a.hasStopMethod = false;
     a.stopMethodId = "";
   }
+
+  a.isNfcEnabled = doc["is_nfc_enabled"] | false;
+  a.isNfcVerified = doc["is_nfc_verified"] | false;
+
   return true;
 }
 
@@ -413,10 +423,12 @@ static void handleCommand(const String &payload) {
     a.id = makeUuidV4();
     if (!parseAlarmFields(doc, a))
       return;
+
+
     a.nextWakeup = computeNextWakeup(a, now);
     g_alarms.push_back(a);
     persistState();
-    Serial.printf("[cmd] added %s %02u:%02u\n", a.id.c_str(), a.hour, a.minute);
+    Serial.printf("[cmd] added %s %02u:%02u %s\n", a.id.c_str(), a.hour, a.minute, a.isNfcEnabled ? "NFC" : "no NFC");
 
   } else if (strcmp(type, "edit") == 0) {
     const char *id = doc["id"];
@@ -434,7 +446,7 @@ static void handleCommand(const String &payload) {
     }
     rescheduleAll(now);
     persistState();
-    Serial.printf("[cmd] edited %s\n", a.id.c_str());
+    Serial.printf("[cmd] edited %s %s\n", a.id.c_str(), a.isNfcEnabled ? "NFC" : "no NFC");
 
   } else if (strcmp(type, "delete") == 0) {
     const char *id = doc["id"];
@@ -456,12 +468,66 @@ static void handleCommand(const String &payload) {
     publishRingingStatus();
 
   } else if (strcmp(type, "pause") == 0) {
+    Alarm *ringing_alarm = nullptr;
+    for (const auto &a : g_alarms) {
+      if (a.ringing) {
+        ringing_alarm = const_cast<Alarm *>(&a);
+        break;
+      }
+    }
+
+    if (!ringing_alarm) {
+      Serial.printf("[cmd] nfc_verify failed: no ringing alarm found\n");
+      return;
+    }
+
+    if (ringing_alarm->isNfcEnabled && !ringing_alarm->isNfcVerified) {
+      Serial.printf("[cmd] pause failed: NFC認証が必要なアラームです\n");
+      return;
+    }
+
     uint32_t ms = doc["duration_ms"] | 0;
     g_muteUntilMs = millis() + ms; // 上書き。積み上げない
     g_muteActive = ms > 0;
     Serial.printf("[cmd] paused %u ms\n", ms);
 
+  } else if (strcmp(type, "verify_nfc") == 0) {
+    Alarm *ringing_alarm = nullptr;
+    for (const auto &a : g_alarms) {
+      if (a.ringing) {
+        ringing_alarm = const_cast<Alarm *>(&a);
+        break;
+      }
+    }
+
+    if (!ringing_alarm) {
+      Serial.printf("[cmd] nfc_verify failed: no ringing alarm found\n");
+      return;
+    }
+
+    ringing_alarm->isNfcVerified = true;
+    persistState();
+    Serial.printf("[cmd] nfc_verify succeeded for %s\n", ringing_alarm->id.c_str());
   } else if (strcmp(type, "stop") == 0) {
+    Alarm *ringing_alarm = nullptr;
+    for (const auto &a : g_alarms) {
+      if (a.ringing) {
+        ringing_alarm = const_cast<Alarm *>(&a);
+        break;
+      }
+    }
+
+    if (!ringing_alarm) {
+      Serial.printf("[cmd] stop failed: no ringing alarm found\n");
+      stopAllRinging();
+      return;
+    }
+
+    if (ringing_alarm->isNfcEnabled && !ringing_alarm->isNfcVerified) {
+      Serial.printf("[cmd] stop failed: NFC認証が必要なアラームです\n");
+      return;
+    }
+    
     stopAllRinging();
     Serial.println("[cmd] stopped all ringing alarms");
 
@@ -545,7 +611,25 @@ static void ringTick() {
     return;
   last = millis();
   if (anyRinging() && !isMuted()) {
-    M5.Speaker.tone(2000, 250);
+    Alarm *ringing_alarm = nullptr;
+    for (const auto &a : g_alarms) {
+      if (a.ringing) {
+        ringing_alarm = const_cast<Alarm *>(&a);
+        break;
+      }
+    }
+
+    if (!ringing_alarm) {
+      Serial.println("[ring] error: no ringing alarm found");
+      return;
+    }
+
+    if (ringing_alarm->isNfcVerified) {
+      M5.Speaker.tone(2000, 250);
+    } else {
+      M5.Speaker.tone(2000, 450);
+    }
+
     publishRingingStatus();
   }
 }
