@@ -546,9 +546,8 @@ static void ringTick() {
   last = millis();
   if (anyRinging() && !isMuted()) {
     M5.Speaker.tone(2000, 250);
+    publishRingingStatus();
   }
-
-  publishRingingStatus();
 }
 
 static void drawUi() {
