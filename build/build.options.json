@@ -1,0 +1,11 @@
+{
+  "additionalFiles": "../..",
+  "builtInToolsFolders": "",
+  "compiler.optimization_flags": "-Os",
+  "customBuildProperties": "",
+  "fqbn": "m5stack:esp32:m5stack_sticks3:JTAGAdapter=default,PSRAM=opi,FlashMode=qio,FlashSize=8M,LoopCore=1,EventsCore=1,USBMode=hwcdc,CDCOnBoot=cdc,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,PartitionScheme=default_8MB,CPUFreq=240,UploadSpeed=921600,DebugLevel=none,EraseFlash=none",
+  "hardwareFolders": "/Users/flukekit/Library/Arduino15/packages",
+  "otherLibrariesFolders": "/Users/flukekit/Documents/Arduino/libraries",
+  "runtime.ide.version": "10607",
+  "sketchLocation": "/Users/flukekit/workspace/eager-alarm-m5/main"
+}
