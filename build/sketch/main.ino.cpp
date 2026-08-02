@@ -83,6 +83,9 @@ struct Alarm {
   time_t nextWakeup = 0; // 0 = スケジュールなし
   bool ringing = false;
   time_t ringingSince = 0; // 鳴り始めた予定時刻 (ringing == false なら 0)
+ 
+  bool isNfcEnabled; // NFCを使った二要素認証のアラームかどうか
+  bool isNfcVerified; // NFC認証が成功したかどうか
 };
 
 static std::vector<Alarm> g_alarms;
@@ -116,59 +119,59 @@ static const char *WD_NAMES[7] = {"Sun", "Mon", "Tue", "Wed",
                                   "Thu", "Fri", "Sat"};
 static const int WD_ORDER[7] = {1, 2, 3, 4, 5, 6, 0}; // 出力は Mon..Sun 順
 
-#line 117 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 120 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static int wdayFromName(const char *s);
-#line 125 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 128 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static String makeUuidV4();
-#line 139 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 142 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static bool timeIsSynced();
-#line 143 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 146 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static bool isMuted();
-#line 153 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 156 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static Alarm* findAlarm(const String &id);
-#line 167 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 170 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static time_t computeNextWakeup(const Alarm &a, time_t from);
-#line 198 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 201 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void rescheduleAll(time_t from);
-#line 205 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 208 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void alarmToJson(const Alarm &a, JsonObject o);
-#line 224 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 229 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void persistState();
-#line 244 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 249 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void loadState();
-#line 294 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 299 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void restoreRinging();
-#line 314 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 319 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void publishAlarms();
-#line 332 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 337 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void publishRingingStatus();
-#line 346 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 351 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void publishStatus();
-#line 350 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 355 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void stopAllRinging();
-#line 372 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 378 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static bool parseAlarmFields(JsonDocument &doc, Alarm &a);
-#line 399 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 409 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void handleCommand(const String &payload);
-#line 473 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 539 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void mqttCallback(char *topic, byte *payload, unsigned int len);
-#line 482 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 548 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void ensureWifi();
-#line 492 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 558 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void ensureMqtt();
-#line 510 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 576 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void checkSchedule();
-#line 534 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 600 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static bool anyRinging();
-#line 542 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 608 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void ringTick();
-#line 553 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 637 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static void drawUi();
-#line 618 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 702 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 void setup();
-#line 656 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 740 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 void loop();
-#line 117 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
+#line 120 "/Users/flukekit/workspace/eager-alarm-m5/main/main.ino"
 static int wdayFromName(const char *s) {
   for (int i = 0; i < 7; i++) {
     if (strcasecmp(s, WD_NAMES[i]) == 0)
@@ -274,6 +277,8 @@ static void alarmToJson(const Alarm &a, JsonObject o) {
   } else {
     o["stop_method_id"] = nullptr;
   }
+  o["is_nfc_enabled"] = a.isNfcEnabled;
+  o["is_nfc_verified"] = a.isNfcVerified;
 }
 
 static void persistState() {
@@ -407,6 +412,7 @@ static void stopAllRinging() {
   for (auto &a : g_alarms) {
     if (a.ringing) {
       a.ringing = false;
+      a.isNfcVerified = false; // 停止時に NFC 認証をリセットする
       a.ringingSince = 0;
       stopped.push_back(a.id);
     }
@@ -448,6 +454,10 @@ static bool parseAlarmFields(JsonDocument &doc, Alarm &a) {
     a.hasStopMethod = false;
     a.stopMethodId = "";
   }
+
+  a.isNfcEnabled = doc["is_nfc_enabled"] | false;
+  a.isNfcVerified = doc["is_nfc_verified"] | false;
+
   return true;
 }
 
@@ -468,10 +478,12 @@ static void handleCommand(const String &payload) {
     a.id = makeUuidV4();
     if (!parseAlarmFields(doc, a))
       return;
+
+
     a.nextWakeup = computeNextWakeup(a, now);
     g_alarms.push_back(a);
     persistState();
-    Serial.printf("[cmd] added %s %02u:%02u\n", a.id.c_str(), a.hour, a.minute);
+    Serial.printf("[cmd] added %s %02u:%02u %s\n", a.id.c_str(), a.hour, a.minute, a.isNfcEnabled ? "NFC" : "no NFC");
 
   } else if (strcmp(type, "edit") == 0) {
     const char *id = doc["id"];
@@ -489,7 +501,7 @@ static void handleCommand(const String &payload) {
     }
     rescheduleAll(now);
     persistState();
-    Serial.printf("[cmd] edited %s\n", a.id.c_str());
+    Serial.printf("[cmd] edited %s %s\n", a.id.c_str(), a.isNfcEnabled ? "NFC" : "no NFC");
 
   } else if (strcmp(type, "delete") == 0) {
     const char *id = doc["id"];
@@ -511,12 +523,66 @@ static void handleCommand(const String &payload) {
     publishRingingStatus();
 
   } else if (strcmp(type, "pause") == 0) {
+    Alarm *ringing_alarm = nullptr;
+    for (const auto &a : g_alarms) {
+      if (a.ringing) {
+        ringing_alarm = const_cast<Alarm *>(&a);
+        break;
+      }
+    }
+
+    if (!ringing_alarm) {
+      Serial.printf("[cmd] nfc_verify failed: no ringing alarm found\n");
+      return;
+    }
+
+    if (ringing_alarm->isNfcEnabled && !ringing_alarm->isNfcVerified) {
+      Serial.printf("[cmd] pause failed: NFC認証が必要なアラームです\n");
+      return;
+    }
+
     uint32_t ms = doc["duration_ms"] | 0;
     g_muteUntilMs = millis() + ms; // 上書き。積み上げない
     g_muteActive = ms > 0;
     Serial.printf("[cmd] paused %u ms\n", ms);
 
+  } else if (strcmp(type, "verify_nfc") == 0) {
+    Alarm *ringing_alarm = nullptr;
+    for (const auto &a : g_alarms) {
+      if (a.ringing) {
+        ringing_alarm = const_cast<Alarm *>(&a);
+        break;
+      }
+    }
+
+    if (!ringing_alarm) {
+      Serial.printf("[cmd] nfc_verify failed: no ringing alarm found\n");
+      return;
+    }
+
+    ringing_alarm->isNfcVerified = true;
+    persistState();
+    Serial.printf("[cmd] nfc_verify succeeded for %s\n", ringing_alarm->id.c_str());
   } else if (strcmp(type, "stop") == 0) {
+    Alarm *ringing_alarm = nullptr;
+    for (const auto &a : g_alarms) {
+      if (a.ringing) {
+        ringing_alarm = const_cast<Alarm *>(&a);
+        break;
+      }
+    }
+
+    if (!ringing_alarm) {
+      Serial.printf("[cmd] stop failed: no ringing alarm found\n");
+      stopAllRinging();
+      return;
+    }
+
+    if (ringing_alarm->isNfcEnabled && !ringing_alarm->isNfcVerified) {
+      Serial.printf("[cmd] stop failed: NFC認証が必要なアラームです\n");
+      return;
+    }
+    
     stopAllRinging();
     Serial.println("[cmd] stopped all ringing alarms");
 
@@ -600,7 +666,25 @@ static void ringTick() {
     return;
   last = millis();
   if (anyRinging() && !isMuted()) {
-    M5.Speaker.tone(2000, 250);
+    Alarm *ringing_alarm = nullptr;
+    for (const auto &a : g_alarms) {
+      if (a.ringing) {
+        ringing_alarm = const_cast<Alarm *>(&a);
+        break;
+      }
+    }
+
+    if (!ringing_alarm) {
+      Serial.println("[ring] error: no ringing alarm found");
+      return;
+    }
+
+    if (ringing_alarm->isNfcVerified) {
+      M5.Speaker.tone(2000, 250);
+    } else {
+      M5.Speaker.tone(2000, 450);
+    }
+
     publishRingingStatus();
   }
 }
