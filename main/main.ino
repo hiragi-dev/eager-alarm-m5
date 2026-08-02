@@ -78,14 +78,15 @@ struct Alarm {
   bool hasStopMethod = false;
   String stopMethodId; // hasStopMethod == false なら null 扱い
 
-  time_t nextWakeup = 0;   // 0 = スケジュールなし
+  time_t nextWakeup = 0; // 0 = スケジュールなし
   bool ringing = false;
   time_t ringingSince = 0; // 鳴り始めた予定時刻 (ringing == false なら 0)
 };
 
 static std::vector<Alarm> g_alarms;
 
-// NVS から読んだ鳴動状態の復元待ち。時刻が確定してから restoreRinging() で判定する
+// NVS から読んだ鳴動状態の復元待ち。時刻が確定してから restoreRinging()
+// で判定する
 struct RingRestore {
   String id;
   time_t since;
@@ -284,8 +285,9 @@ static void loadState() {
 
 /*
  * 再起動前に鳴っていたアラームの鳴動を復元する。時計が確定してから一度だけ呼ぶこと。
- * Rust 版 (with_ringer_and_store) は ringing_ids を無条件に start_ringing するが、
- * こちらは鳴り始めから RINGING_RESUME_GRACE_SEC 以内のものだけを復元する。
+ * Rust 版 (with_ringer_and_store) は ringing_ids を無条件に start_ringing
+ * するが、 こちらは鳴り始めから RINGING_RESUME_GRACE_SEC
+ * 以内のものだけを復元する。
  * 電源が落ちている間に時刻が過ぎてしまったアラームは起動直後に鳴り出さず、
  * 次回の予定 (computeNextWakeup) に回る。
  */
@@ -545,6 +547,8 @@ static void ringTick() {
   if (anyRinging() && !isMuted()) {
     M5.Speaker.tone(2000, 250);
   }
+
+  publishRingingStatus();
 }
 
 static void drawUi() {
